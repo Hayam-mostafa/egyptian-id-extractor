@@ -1,93 +1,169 @@
 import streamlit as st
-import cv2
-from utils import full_pipeline
+import time
+from utils import full_pipeline  
 from info import decode_egyptian_id
 
 st.set_page_config(
-    page_title="Egyptian Extract ID",
-    page_icon="🪪",
-    layout="wide"
+    page_title="NID Extractor",
+    layout="centered",
+    page_icon="🪪"
 )
 
 st.markdown("""
 <style>
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-    max-width: 1100px;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&display=swap');
+
+.stApp {
+    background: radial-gradient(circle at top, #0b1220, #050814);
+    font-family: 'Inter', sans-serif;
+    color: white;
 }
 
-.title {
+.title-box {
     text-align: center;
-    font-size: 32px;
-    font-weight: 600;
-    margin-bottom: 5px;
+    padding: 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 0 25px rgba(0,255,255,0.08);
+    margin-bottom: 15px;
 }
 
-.subtitle {
+.title-box h1 {
+    font-size: 26px;
+    margin: 0;
+    color: white;
+    font-weight: 700;
+}
+
+.stFileUploader section {
+    border-radius: 16px !important;
+    border: 2px dashed rgba(0, 224, 255, 0.6) !important;
+    background: rgba(255,255,255,0.03) !important;
+    backdrop-filter: blur(5px);
+}
+
+.stFileUploader section:hover {
+    border-color: #00e5ff !important;
+    background: rgba(0, 224, 255, 0.05) !important;
+}
+
+.stFileUploader label {
+    color: white !important;
+    font-weight: 600 !important;
+}
+
+.stFileUploader button {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: white !important;
+    border: 1px solid rgba(0, 224, 255, 0.4) !important;
+    border-radius: 10px !important;
+    margin-bottom: 10px;
+}
+
+.image-box {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(0,255,255,0.2);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+
+.result-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 20px;
+    border-radius: 16px;
     text-align: center;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 25px rgba(124,77,255,0.15);
+}
+
+.id-number {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    margin-top: 10px;
+    background: linear-gradient(90deg,#00e5ff,#7c4dff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.info {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.label { color: #94a3b8; font-size: 13px; }
+.value { color: white; font-weight: 600; }
+
+.footer {
+    text-align: center;
+    color: #64748b;
     font-size: 15px;
-    color: #666;
-    margin-bottom: 30px;
-}
-
-.section {
-    background: #f9fafb;
-    padding: 25px;
-    border-radius: 12px;
-    border: 1px solid #eee;
-    margin-bottom: 25px;
+    margin-top: 30px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='title'>Egyptian Extract National ID Number</div>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle'>Upload an ID card image to extract the national ID number</div>", unsafe_allow_html=True)
+st.markdown("""
+<div class="title-box">
+    <h1>🪪 National ID Extractor</h1>
+    <p style="color:#94a3b8;">Scan and extract ID Automatically</p>
+</div>
+""", unsafe_allow_html=True)
 
+uploaded_file = st.file_uploader(
+    "Please Upload Front Side ID Card Image",
+    type=["jpg", "png", "jpeg"]
+)
 
-st.markdown("<div class='section'>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
-st.markdown("</div>", unsafe_allow_html=True)
+if uploaded_file:
+    img_content = uploaded_file.read()
 
-if uploaded_file is not None:
-    img = uploaded_file.read()
+    with st.spinner("Scanning ID..."):
+        progress_bar = st.progress(0)
 
-    with st.spinner("**Processing image...**"):
         try:
-            corrected_skew, id_cropped, nid = full_pipeline(img)
+            progress_bar.progress(10)
+            time.sleep(0.2)
+
+            progress_bar.progress(40)
+            corrected_skew, id_cropped, nid = full_pipeline(img_content)
+
+            progress_bar.progress(80)
+            info_data = decode_egyptian_id(nid)
+
+            progress_bar.progress(100)
+            progress_bar.empty()
 
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("<div class='section'>", unsafe_allow_html=True)
-                st.markdown("**ID Card**")
-                st.image(corrected_skew, use_container_width=True)
-
-                st.markdown("**NID Number**")
-                st.image(cv2.cvtColor(id_cropped, cv2.COLOR_BGR2RGB), use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown('<div class="image-box">', unsafe_allow_html=True)
+                st.image(img_content, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
             with col2:
-                st.markdown("<div class='section'>", unsafe_allow_html=True)
-                st.markdown("**Extracted National ID**")
+                st.markdown(f"""
+                <div class="result-card">
+                    <div style="color:#94a3b8; font-size:13px;">EXTRACTED ID</div>
+                    <div class="id-number">{nid if nid else "Not Detected"}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                st.code(nid if nid else "No ID detected", language=None)
+                st.markdown("<br>", unsafe_allow_html=True)
 
-                if nid and len(nid) == 14:
-                    st.success("Valid National ID (14 digits)")
-                    decoded_info = decode_egyptian_id(nid)
-                    st.markdown(f"**Birth Date:** {decoded_info['Birth Date']}")
-                    st.markdown(f"**Governorate:** {decoded_info['Governorate']}")
-                    st.markdown(f"**Gender:** {decoded_info['Gender']}")
-                else:
-                    st.error(f"Invalid ID ({len(nid) if nid else 0} digits detected)")
+                st.markdown(f"""
+                <div class="result-card">
+                    <div class="info"><span class="value">{info_data['Birth Date']}</span><span class="label">Birth Date</span></div>
+                    <div class="info"><span class="value">{info_data['Governorate']}</span><span class="label">Governorate</span></div>
+                    <div class="info"><span class="value">{info_data['Gender']}</span><span class="label">Gender</span></div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Analysis Failed: {str(e)}")
 
-        except ValueError as e:
-            st.error(str(e))
-            st.info("Please upload a clearer image.")
-
-
-st.markdown("---")
-st.markdown("<p style='text-align:center; color:#777;'>Developed by <strong>Hayoma💙</strong></p>",unsafe_allow_html=True)
+st.markdown('<div class="footer">Developed by Hayoma🤍</div>', unsafe_allow_html=True)

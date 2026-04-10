@@ -1,5 +1,5 @@
-from datetime import datetime
 from typing import Dict
+
 def decode_egyptian_id(id_number: str) -> Dict[str, str]:
     """
     Decode Egyptian National ID number to extract information.
@@ -51,7 +51,6 @@ def decode_egyptian_id(id_number: str) -> Dict[str, str]:
         '88': 'Foreign'
     }
     
-    # Validate ID length
     if not id_number or len(id_number) != 14:
         return {
             'Birth Date': '',
@@ -60,7 +59,6 @@ def decode_egyptian_id(id_number: str) -> Dict[str, str]:
         }
     
     try:
-        # Extract components
         century_digit = int(id_number[0])
         year = int(id_number[1:3])
         month = int(id_number[3:5])
@@ -76,13 +74,10 @@ def decode_egyptian_id(id_number: str) -> Dict[str, str]:
         else:
             raise ValueError(f"Invalid century digit: {century_digit}")
         
-        # Determine gender
         gender = "Male" if gender_code % 2 != 0 else "Female"
         
-        # Get governorate
         governorate = governorates.get(governorate_code, "Unknown")
         
-        # Format birth date
         birth_date = f"{full_year:04d}-{month:02d}-{day:02d}"
         
         return {
