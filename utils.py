@@ -6,13 +6,13 @@ import cv2
 import numpy as np
 import re
 
-
 '''load Models'''
 card_model   = YOLO('Models/card_detector.pt')
 digit_model = YOLO('Models/digit_detector.pt')
 id_model     = YOLO('Models/nid_detector.pt')
 reader       = easyocr.Reader(['ar'], gpu=False)
 clahe       = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8,8)) 
+
 
 '''detect and crop the card from the input image'''
 def crop_card(image,card_model):
@@ -37,57 +37,90 @@ def crop_card(image,card_model):
     y2 = min(h, y2)
     
     image_cropped = image[y1:y2, x1:x2].copy()
+       
     return image_cropped
 
 
 '''correct the orientation of the cropped card'''
 def correct_orientation(image_cropped_bgr):
-   
     angles = [0, 90, 180, 270]
+    best_angle = 0
+    max_conf = 0
+    
+    temp_bgr = image_cropped_bgr.copy()
     
     for angle in angles:
         if angle == 90:
-            temp_img = cv2.rotate(image_cropped_bgr, cv2.ROTATE_90_CLOCKWISE)
+            rotated = cv2.rotate(temp_bgr, cv2.ROTATE_90_CLOCKWISE)
         elif angle == 180:
-            temp_img = cv2.rotate(image_cropped_bgr, cv2.ROTATE_180)
+            rotated = cv2.rotate(temp_bgr, cv2.ROTATE_180)
         elif angle == 270:
-            temp_img = cv2.rotate(image_cropped_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            rotated = cv2.rotate(temp_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
         else:
-            temp_img = image_cropped_bgr
-
-        img_rgb = cv2.cvtColor(temp_img, cv2.COLOR_BGR2RGB)
+            rotated = temp_bgr
+ 
+        results = id_model.predict(rotated, conf=0.4, verbose=False)[0]
         
-        face_locations = face_recognition.face_locations(img_rgb)
+        if len(results.boxes) > 0:
+            current_conf = results.boxes.conf.cpu().numpy().max()
+            if current_conf > max_conf:
+                max_conf = current_conf
+                best_angle = angle
 
-        if face_locations:
-            return PImage.fromarray(img_rgb)
+    if best_angle == 90:
+        final_img = cv2.rotate(temp_bgr, cv2.ROTATE_90_CLOCKWISE)
+    elif best_angle == 180:
+        final_img = cv2.rotate(temp_bgr, cv2.ROTATE_180)
+    elif best_angle == 270:
+        final_img = cv2.rotate(temp_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    else:
+        final_img = temp_bgr
+        
+    print(f" Orientation Fixed: {best_angle}° (Confidence: {max_conf:.2f})")
     
-    return PImage.fromarray(cv2.cvtColor(image_cropped_bgr, cv2.COLOR_BGR2RGB))
+    img_rgb = cv2.cvtColor(final_img, cv2.COLOR_BGR2RGB)
+    from PIL import Image as PImage
+    return PImage.fromarray(img_rgb)
 
 
 '''correct the skew of the orientation corrected image'''
-def correct_skew(corrected_orientation_img):
-    img_gray = cv2.cvtColor(np.array(corrected_orientation_img), cv2.COLOR_RGB2GRAY)
-    _, img_bin = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+def correct_skew(image):
 
-    angles = np.arange(-10, 10, 0.5)
-    scores = []
-    for angle in angles:
-        M = cv2.getRotationMatrix2D((img_bin.shape[1] // 2, img_bin.shape[0] // 2), angle, 1)
-        rotated = cv2.warpAffine(img_bin, M, (img_bin.shape[1], img_bin.shape[0]),
-                                 flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-        hist = np.sum(rotated, axis=1)
-        scores.append(np.var(hist))
+    img = np.array(image)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
 
-    best_angle = angles[np.argmax(scores)]
-    
-    if abs(best_angle) < 0.3:
-        return corrected_orientation_img
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 150)
 
-    M = cv2.getRotationMatrix2D((img_bin.shape[1] // 2, img_bin.shape[0] // 2), best_angle, 1)
-    rotated_final = cv2.warpAffine(np.array(corrected_orientation_img), M, (img_bin.shape[1], img_bin.shape[0]),
-                                   flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return PImage.fromarray(rotated_final)
+    if lines is None:
+        return image
+
+    angles = []
+    for rho, theta in lines[:, 0]:
+        angle = (theta * 180 / np.pi) - 90
+        angles.append(angle)
+
+    median_angle = np.median(angles)
+
+    if abs(median_angle) > 20:
+        return image
+
+    h, w = gray.shape
+
+    rad = np.deg2rad(median_angle)
+    new_w = int(abs(w * np.cos(rad)) + abs(h * np.sin(rad)))
+    new_h = int(abs(h * np.cos(rad)) + abs(w * np.sin(rad)))
+
+    M = cv2.getRotationMatrix2D((w // 2, h // 2), median_angle, 1)
+
+    M[0, 2] += (new_w - w) / 2
+    M[1, 2] += (new_h - h) / 2
+
+    rotated = cv2.warpAffine(
+        img,M,(new_w, new_h),flags=cv2.INTER_CUBIC,borderMode=cv2.BORDER_REPLICATE)
+
+    return PImage.fromarray(rotated)
+
 
 '''Expand Area'''
 def expand_bbox_height(bbox, scale=1.5, image_shape=None):
@@ -198,12 +231,17 @@ def extract_national_id(id_cropped):
     if len(all_digits) < 14 and len(yolo_digits) == 14:
         print("OCR incomplete → YOLO")
         return yolo_digits
+    
+    if len(all_digits) > 14 and len(yolo_digits) == 14:
+        print("OCR overdetected → YOLO")
+        return yolo_digits
 
     if len(all_digits) == 14 and len(yolo_digits) < 14:
         print("YOLO incomplete → OCR")
         return all_digits
 
     print(f"Failed | OCR={len(all_digits)} | YOLO={len(yolo_digits)}")
+    
     return None
 
 
@@ -227,5 +265,3 @@ def full_pipeline(input_img):
     nid = extract_national_id(id_cropped)
 
     return corrected_skew, id_cropped, nid
-
-
