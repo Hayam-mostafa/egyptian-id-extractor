@@ -1,6 +1,5 @@
 from PIL import Image as PImage
 from ultralytics import YOLO
-import face_recognition
 import easyocr
 import cv2
 import numpy as np
